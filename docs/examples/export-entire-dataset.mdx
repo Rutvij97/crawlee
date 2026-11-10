@@ -9,6 +9,8 @@ import CrawlSource from '!!raw-loader!roa-loader!./export-entire-dataset.ts';
 
 This `Dataset` example uses the `exportToValue` function to export the entire default dataset to a single CSV file into the default key-value store.
 
+Besides CSV and JSON, <ApiLink to="core/class/Dataset#exportToParquet">`Dataset.exportToParquet()`</ApiLink> writes an [Apache Parquet](https://parquet.apache.org/) file, which is a lot smaller than CSV or JSON and loads directly into pandas, DuckDB, Spark and similar tools. It needs the optional `hyparquet-writer` package (`npm install hyparquet-writer`).
+
 <RunnableCodeBlock className="language-js" type="cheerio">
 	{CrawlSource}
 </RunnableCodeBlock>

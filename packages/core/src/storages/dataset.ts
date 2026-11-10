@@ -16,6 +16,30 @@ import type { StorageIdentifier } from './storage-instance-manager.js';
 import { resolveStorageIdentifier } from './storage-instance-manager.js';
 import { createDualIterable, purgeDefaultStorages } from './utils.js';
 
+/** Media type registered with IANA for Apache Parquet files. */
+const PARQUET_CONTENT_TYPE = 'application/vnd.apache.parquet';
+
+/**
+ * Loads the optional `hyparquet-writer` package used by {@apilink Dataset.exportToParquet}.
+ * It is an optional peer dependency, so a missing install is reported with an actionable message
+ * instead of a bare module resolution error.
+ */
+async function importParquetWriter(): Promise<typeof import('hyparquet-writer')> {
+    try {
+        return await import('hyparquet-writer');
+    } catch (err) {
+        const e = err as Error & { code?: string };
+        if (e.code === 'ERR_MODULE_NOT_FOUND' || e.code === 'MODULE_NOT_FOUND') {
+            throw new Error(
+                "Exporting a dataset to Parquet requires the optional 'hyparquet-writer' package. " +
+                    "Install it with 'npm install hyparquet-writer' and add it to your package.json dependencies.",
+                { cause: err },
+            );
+        }
+        throw err;
+    }
+}
+
 const openOptionsSchema = z.strictObject({
     configuration: z.instanceof(Configuration).optional(),
     storageBackend: validators.storageBackend.optional(),
@@ -102,7 +126,7 @@ export interface DatasetDataOptions {
 
 export interface DatasetExportOptions extends Omit<DatasetDataOptions, 'offset' | 'limit'> {
     /**
-     * If true, includes all unique keys from all dataset items in the CSV export header.
+     * If true, includes all unique keys from all dataset items in the CSV export header (or Parquet columns).
      * If omitted or false, only keys from the first item are used.
      */
     collectAllKeys?: boolean;
@@ -398,11 +422,33 @@ export class Dataset<Data extends Dictionary = Dictionary> {
      *
      * @param key The name of the value to save the data in.
      * @param [options] An optional options object where you can provide the dataset and target KVS name.
-     * @param [contentType] Only JSON and CSV are supported currently, defaults to JSON.
+     * @param [contentType] `application/json` (default), `text/csv` or `application/vnd.apache.parquet`.
+     *   Parquet export requires the optional `hyparquet-writer` package to be installed.
      */
     async exportTo(key: string, options?: DatasetExportToOptions, contentType?: string): Promise<Data[]> {
         const kvStore = await KeyValueStore.open(options?.toKVS ?? null, { configuration: this.configuration });
         const items = await this.export(options);
+
+        if (contentType === PARQUET_CONTENT_TYPE) {
+            const { parquetWriteBuffer } = await importParquetWriter();
+            const keys = Dataset.#exportKeys(items, options);
+            // One column per key. Items missing a key get `null`, nested values are stored as JSON.
+            const columnData = keys.map((name) => ({ name, data: items.map((item) => item[name] ?? null) }));
+
+            let buffer: ArrayBuffer;
+            try {
+                buffer = parquetWriteBuffer({ columnData });
+            } catch (err) {
+                throw new Error(
+                    `Failed to export the dataset to Parquet. Parquet columns must hold a single type, ` +
+                        `so make sure every item uses the same type for each key. ${(err as Error).message}`,
+                    { cause: err },
+                );
+            }
+
+            await kvStore.setValue(key, Buffer.from(buffer), { contentType });
+            return items;
+        }
 
         if (contentType === 'text/csv') {
             // To handle empty dataset exports gracefully.
@@ -411,9 +457,7 @@ export class Dataset<Data extends Dictionary = Dictionary> {
                 return items;
             }
 
-            const keys = options?.collectAllKeys
-                ? Array.from(new Set(items.flatMap(Object.keys)))
-                : Object.keys(items[0]);
+            const keys = Dataset.#exportKeys(items, options);
 
             const { stringify } = await import('csv-stringify/sync');
 
@@ -436,6 +480,16 @@ export class Dataset<Data extends Dictionary = Dictionary> {
     }
 
     /**
+     * Column names of a tabular export: all unique keys when `collectAllKeys` is set,
+     * otherwise the keys of the first item (none for an empty dataset).
+     */
+    static #exportKeys(items: Dictionary[], options?: DatasetExportOptions): string[] {
+        if (items.length === 0) return [];
+
+        return options?.collectAllKeys ? Array.from(new Set(items.flatMap(Object.keys))) : Object.keys(items[0]);
+    }
+
+    /**
      * Save entire default dataset's contents into one JSON file within a key-value store.
      *
      * @param key The name of the value to save the data in.
@@ -453,6 +507,20 @@ export class Dataset<Data extends Dictionary = Dictionary> {
      */
     async exportToCSV(key: string, options?: Omit<DatasetExportToOptions, 'fromDataset'>) {
         await this.exportTo(key, options, 'text/csv');
+    }
+
+    /**
+     * Save entire default dataset's contents into one Parquet file within a key-value store.
+     *
+     * Requires the optional `hyparquet-writer` package (`npm install hyparquet-writer`). Each key becomes
+     * a column; items missing a key get `null` and nested objects or arrays are stored as JSON.
+     * All values of a column must share one type.
+     *
+     * @param key The name of the value to save the data in.
+     * @param [options] An optional options object where you can provide the target KVS name.
+     */
+    async exportToParquet(key: string, options?: Omit<DatasetExportToOptions, 'fromDataset'>) {
+        await this.exportTo(key, options, PARQUET_CONTENT_TYPE);
     }
 
     /**
@@ -479,6 +547,20 @@ export class Dataset<Data extends Dictionary = Dictionary> {
 
         const dataset = await this.open(options?.fromDataset);
         await dataset.exportToCSV(key, options);
+    }
+
+    /**
+     * Save entire default dataset's contents into one Parquet file within a key-value store.
+     * Requires the optional `hyparquet-writer` package, see {@apilink Dataset.exportToParquet}.
+     *
+     * @param key The name of the value to save the data in.
+     * @param [options] An optional options object where you can provide the dataset and target KVS name.
+     */
+    static async exportToParquet(key: string, options?: DatasetExportToOptions) {
+        tryCancel();
+
+        const dataset = await this.open(options?.fromDataset);
+        await dataset.exportToParquet(key, options);
     }
 
     /**

@@ -9,6 +9,7 @@ import {
 import type { Dictionary } from '@crawlee/types';
 
 import { MAX_PAYLOAD_SIZE_BYTES } from '@apify/consts';
+import { parquetReadObjects } from 'hyparquet';
 
 beforeEach(async () => {
     serviceLocator.setStorageBackend(new MemoryStorageBackend());
@@ -502,6 +503,82 @@ describe('dataset', () => {
                 expect(exported).toContain('id');
                 expect(exported).toContain('name');
                 expect(exported).toContain('age');
+            });
+        });
+
+        describe('exportToParquet', () => {
+            const dataToPush = [
+                { hello: 'world 1', foo: 'bar 1' },
+                { foo: 'bar 2', hello: 'world 2' },
+                { hello: 'world 3', foo: 'bar 3' },
+            ];
+
+            const readParquet = async (key: string, kvStore?: KeyValueStore) => {
+                const value = kvStore ? await kvStore.getValue<Buffer>(key) : await KeyValueStore.getValue<Buffer>(key);
+                expect(Buffer.isBuffer(value)).toBe(true);
+                // Parquet files start and end with the "PAR1" magic bytes.
+                expect(value!.subarray(0, 4).toString()).toBe('PAR1');
+                expect(value!.subarray(-4).toString()).toBe('PAR1');
+                const file = value!.buffer.slice(value!.byteOffset, value!.byteOffset + value!.byteLength);
+                return parquetReadObjects({ file });
+            };
+
+            it('Should work', async () => {
+                const dataset = await Dataset.open({ name: Math.random().toString(36) });
+                await dataset.pushData(dataToPush);
+                await dataset.exportToParquet('HELLO-parquet');
+
+                const kvStore = await KeyValueStore.open();
+                const record = await kvStore.getRecord('HELLO-parquet');
+                expect(record?.contentType).toBe('application/vnd.apache.parquet');
+                expect(await readParquet('HELLO-parquet')).toEqual(dataToPush);
+            });
+
+            it('Should work as a static method for the default dataset', async () => {
+                await Dataset.pushData(dataToPush);
+                await Dataset.exportToParquet('TEST-123-123-parquet');
+
+                expect(await readParquet('TEST-123-123-parquet')).toEqual(dataToPush);
+            });
+
+            it('should write a valid empty file for an empty dataset', async () => {
+                const dataset = await Dataset.open({ name: Math.random().toString(36) });
+                await dataset.exportToParquet('EMPTY-parquet');
+
+                expect(await readParquet('EMPTY-parquet')).toEqual([]);
+            });
+
+            it('should fill missing keys with null and store nested values as JSON', async () => {
+                const dataset = await Dataset.open({ name: Math.random().toString(36) });
+                await dataset.pushData([
+                    { id: 1, name: 'Alice', meta: { tags: ['a', 'b'], score: 1.5 } },
+                    { id: 2, age: 30, meta: null },
+                ]);
+
+                const kvStore = await KeyValueStore.open({ name: Math.random().toString(36) });
+                await dataset.exportTo(
+                    'all.parquet',
+                    { toKVS: { name: kvStore.name! }, collectAllKeys: true },
+                    'application/vnd.apache.parquet',
+                );
+
+                expect(await readParquet('all.parquet', kvStore)).toEqual([
+                    { id: 1, name: 'Alice', meta: { tags: ['a', 'b'], score: 1.5 }, age: null },
+                    { id: 2, name: null, meta: null, age: 30 },
+                ]);
+
+                // Without collectAllKeys only the first item's keys become columns, as with CSV.
+                await dataset.exportToParquet('first.parquet', { toKVS: { name: kvStore.name! } });
+                expect(Object.keys((await readParquet('first.parquet', kvStore))[0])).toEqual(['id', 'name', 'meta']);
+            });
+
+            it('should throw a descriptive error for mixed-type columns', async () => {
+                const dataset = await Dataset.open({ name: Math.random().toString(36) });
+                await dataset.pushData([{ value: 1 }, { value: 'two' }]);
+
+                await expect(dataset.exportToParquet('MIXED-parquet')).rejects.toThrow(
+                    /Failed to export the dataset to Parquet.*mixed types/s,
+                );
             });
         });
 

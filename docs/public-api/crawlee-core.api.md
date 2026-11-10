@@ -180,6 +180,8 @@ export class Dataset<Data extends Dictionary = Dictionary> {
     static exportToCSV(key: string, options?: DatasetExportToOptions): Promise<void>;
     exportToJSON(key: string, options?: Omit<DatasetExportToOptions, 'fromDataset'>): Promise<void>;
     static exportToJSON(key: string, options?: DatasetExportToOptions): Promise<void>;
+    exportToParquet(key: string, options?: Omit<DatasetExportToOptions, 'fromDataset'>): Promise<void>;
+    static exportToParquet(key: string, options?: DatasetExportToOptions): Promise<void>;
     forEach(iteratee: DatasetConsumer<Data>, options?: DatasetIteratorOptions, index?: number): Promise<void>;
     getData(options?: DatasetDataOptions): Promise<DatasetContent<Data>>;
     static getData<Data extends Dictionary = Dictionary>(options?: DatasetDataOptions): Promise<DatasetContent<Data>>;

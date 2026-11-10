@@ -68,5 +68,16 @@
         "tslib": "^2.9.1",
         "type-fest": "^4.41.0",
         "zod": "catalog:"
+    },
+    "devDependencies": {
+        "hyparquet-writer": "^0.18.0"
+    },
+    "peerDependencies": {
+        "hyparquet-writer": "*"
+    },
+    "peerDependenciesMeta": {
+        "hyparquet-writer": {
+            "optional": true
+        }
     }
 }

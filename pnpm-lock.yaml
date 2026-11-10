@@ -338,6 +338,9 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
+      hyparquet:
+        specifier: ^1.32.0
+        version: 1.32.0
       iconv-lite:
         specifier: ^0.7.3
         version: 0.7.3
@@ -703,6 +706,10 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 4.6.7
+    devDependencies:
+      hyparquet-writer:
+        specifier: ^0.18.0
+        version: 0.18.0
 
   packages/crawlee:
     dependencies:
@@ -8001,6 +8008,12 @@ packages:
     resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
     engines: {node: '>=18'}
     hasBin: true
+
+  hyparquet-writer@0.18.0:
+    resolution: {integrity: sha512-1vDuEneasjp2yuk/OnLqli5aArzHQw8NYVbJD7ytpHZ3outmJaHHRcNbA7BiiFxonWGhwgPPWnVSsREv6LxE4A==}
+
+  hyparquet@1.32.0:
+    resolution: {integrity: sha512-SpkvdfgQjcdCJA+MTzo0WSreLLy/aLRYs3xetk1SsuFvq8vF+J/97OaRnZhf+p5Nx3J27i9FhSC0bJ5eQZG/7Q==}
 
   hyperdyperid@1.2.0:
     resolution: {integrity: sha512-Y93lCzHYgGWdrJ66yIktxiaGULYc6oGiABxhcO5AufBeOyoIdZF7bIfLaOrbM0iGIOXQQgxxRrFEnb+Y6w1n4A==}
@@ -21063,6 +21076,12 @@ snapshots:
       ms: 2.1.3
 
   husky@9.1.7: {}
+
+  hyparquet-writer@0.18.0:
+    dependencies:
+      hyparquet: 1.32.0
+
+  hyparquet@1.32.0: {}
 
   hyperdyperid@1.2.0: {}
 
